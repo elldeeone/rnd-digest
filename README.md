@@ -30,6 +30,21 @@ Set in `.env`:
 - `OPENROUTER_API_KEY=...`
 - `OPENROUTER_MODEL=...` (whatever model name OpenRouter exposes)
 
+Optional: keep rollups fresh before scheduled digests:
+
+- `ROLLUP_AUTO_REFRESH_BEFORE_DIGEST=true`
+
+## Commands (control chat only)
+
+- `/help`
+- `/health`
+- `/latest [6h|2d]`
+- `/search <terms>`
+- `/ask [6h|2d|all] <question>`
+- `/topic <thread_id> [6h|2d|1w]`
+- `/rollup <thread_id> [6h|2d|all|rebuild]`
+- `/digest [6h|2d]` (no args = since last digest)
+
 ## Docker
 
 `docker compose -f docker/docker-compose.yml up -d --build`

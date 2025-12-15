@@ -11,6 +11,7 @@ from src.commands.help import handle_help
 from src.commands.latest import handle_latest
 from src.commands.rollup import handle_rollup
 from src.commands.search import handle_search
+from src.commands.topic import handle_topic
 from src.commands.topics import handle_backfill_topics, handle_set_topic_title
 from src.config import Config
 from src.db import Database
@@ -73,6 +74,8 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
         return TextResponse(handle_ask(db=ctx.db, config=ctx.config, args=args))
     if command == "rollup":
         return TextResponse(handle_rollup(db=ctx.db, config=ctx.config, args=args))
+    if command == "topic":
+        return TextResponse(handle_topic(db=ctx.db, config=ctx.config, args=args))
     if command == "debug_ids":
         return TextResponse(handle_debug_ids(message=message))
     if command == "digest":

@@ -24,6 +24,15 @@ def _parse_float(value: str, *, name: str) -> float:
         raise ValueError(f"Invalid float for {name}: {value!r}") from exc
 
 
+def _parse_bool(value: str, *, name: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean for {name}: {value!r} (expected true/false)")
+
+
 def _first_non_empty(values: Iterable[str | None]) -> str | None:
     for value in values:
         if value is not None and value.strip():
@@ -66,6 +75,10 @@ class Config:
 
     ask_llm_max_tokens: int = 800
     ask_llm_temperature: float = 0.1
+
+    rollup_auto_refresh_before_digest: bool = False
+    rollup_refresh_max_topics: int = 6
+    rollup_refresh_min_interval_seconds: int = 600
 
     @staticmethod
     def from_env() -> "Config":
@@ -120,6 +133,15 @@ class Config:
             os.getenv("ASK_LLM_TEMPERATURE", "0.1"), name="ASK_LLM_TEMPERATURE"
         )
 
+        rollup_auto_refresh_before_digest = _parse_bool(
+            os.getenv("ROLLUP_AUTO_REFRESH_BEFORE_DIGEST", "false"),
+            name="ROLLUP_AUTO_REFRESH_BEFORE_DIGEST",
+        )
+        rollup_refresh_max_topics = int(os.getenv("ROLLUP_REFRESH_MAX_TOPICS", "6"))
+        rollup_refresh_min_interval_seconds = int(
+            os.getenv("ROLLUP_REFRESH_MIN_INTERVAL_SECONDS", "600")
+        )
+
         control_digest_thread_id_raw = _first_non_empty([os.getenv("CONTROL_DIGEST_THREAD_ID")])
         control_digest_thread_id = (
             _parse_int(control_digest_thread_id_raw, name="CONTROL_DIGEST_THREAD_ID")
@@ -153,4 +175,7 @@ class Config:
             digest_llm_temperature=digest_llm_temperature,
             ask_llm_max_tokens=ask_llm_max_tokens,
             ask_llm_temperature=ask_llm_temperature,
+            rollup_auto_refresh_before_digest=rollup_auto_refresh_before_digest,
+            rollup_refresh_max_topics=rollup_refresh_max_topics,
+            rollup_refresh_min_interval_seconds=rollup_refresh_min_interval_seconds,
         )

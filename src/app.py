@@ -13,6 +13,7 @@ from src.db import Database
 from src.commands.router import CommandContext, DigestRequest, TextResponse, handle_command
 from src.digest.build_digest import build_digest
 from src.ingest.listener import ingest_update
+from src.rollups.refresh import maybe_refresh_rollups_before_digest
 from src.telegram_client import TelegramClient
 from src.util.logging import configure_logging
 from src.util.time import DailyTime, next_run_utc, now_utc, to_iso_utc
@@ -182,6 +183,17 @@ def _run_digest(
     else:
         last_end = db.get_state("last_digest_end_utc")
         window_start = last_end or to_iso_utc(now - timedelta(hours=config.latest_default_window_hours))
+
+    if advance_state:
+        try:
+            maybe_refresh_rollups_before_digest(
+                db=db,
+                config=config,
+                window_start_utc=window_start,
+                window_end_utc=window_end,
+            )
+        except Exception:
+            log.exception("Rollup auto-refresh failed; continuing without rollups")
 
     digest = build_digest(
         db=db,

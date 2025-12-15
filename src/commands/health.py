@@ -13,6 +13,7 @@ def handle_health(*, db: Database, config: Config) -> str:
     offset = db.get_state("telegram_update_offset")
     last_poll_ok = db.get_state("last_poll_ok_at_utc")
     last_poll_error = db.get_state("last_poll_error_at_utc")
+    last_rollup_refresh = db.get_state("last_rollup_refresh_at_utc")
 
     return (
         "Health\n"
@@ -26,4 +27,5 @@ def handle_health(*, db: Database, config: Config) -> str:
         f"- telegram_update_offset: {offset}\n"
         f"- last_poll_ok_at_utc: {last_poll_ok}\n"
         f"- last_poll_error_at_utc: {last_poll_error}\n"
+        f"- last_rollup_refresh_at_utc: {last_rollup_refresh}\n"
     )

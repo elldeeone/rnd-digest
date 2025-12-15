@@ -6,6 +6,7 @@ def handle_help() -> str:
         "/latest [6h|2d]\n"
         "/search <terms>\n"
         "/ask [6h|2d|all] <question>\n"
+        "/topic <thread_id> [6h|2d|1w]\n"
         "/rollup <thread_id> [6h|2d|all|rebuild]\n"
         "/digest [6h|2d]  (no args = since last digest; duration is preview)\n"
         "/debug_ids\n"

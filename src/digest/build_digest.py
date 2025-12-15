@@ -105,8 +105,6 @@ def build_extractive_digest(
                 continue
             author = msg["from_display"] or msg["from_username"] or "?"
             text_one_line = text.replace("\n", " ")
-            if len(text_one_line) > 240:
-                text_one_line = text_one_line[:237] + "..."
             quotes.append(f'- [{msg["date_utc"]}] {author}: {text_one_line}')
             if len(quotes) >= config.digest_max_quotes_per_topic:
                 break

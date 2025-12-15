@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from datetime import timedelta
 
 from dotenv import load_dotenv
@@ -35,6 +36,20 @@ def main() -> None:
     db.init_schema()
 
     client = TelegramClient(config.telegram_bot_token)
+
+    if not config.source_chat_username:
+        try:
+            chat = client.get_chat(chat_id=config.source_chat_id)
+            username = chat.get("username") if isinstance(chat, dict) else None
+            if isinstance(username, str) and username.strip():
+                config = replace(config, source_chat_username=username.strip())
+                log.info("Detected source chat username: @%s", config.source_chat_username)
+            else:
+                log.warning(
+                    "SOURCE_CHAT_USERNAME not set and getChat returned no username; receipts may be less clickable"
+                )
+        except Exception:
+            log.exception("Failed to auto-detect SOURCE_CHAT_USERNAME via getChat")
 
     offset_raw = db.get_state("telegram_update_offset")
     offset = int(offset_raw) if offset_raw else None

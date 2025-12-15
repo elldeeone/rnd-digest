@@ -29,6 +29,7 @@ class Config:
     telegram_bot_token: str
     source_chat_id: int
     control_chat_ids: set[int]
+    source_chat_username: str | None = None
 
     db_path: str = "./data/kaspa.db"
 
@@ -74,6 +75,8 @@ class Config:
         digest_max_quotes_per_topic = int(os.getenv("DIGEST_MAX_QUOTES_PER_TOPIC", "3"))
         digest_max_messages_per_topic = int(os.getenv("DIGEST_MAX_MESSAGES_PER_TOPIC", "80"))
 
+        source_chat_username = _first_non_empty([os.getenv("SOURCE_CHAT_USERNAME")])
+
         control_digest_thread_id_raw = _first_non_empty([os.getenv("CONTROL_DIGEST_THREAD_ID")])
         control_digest_thread_id = (
             _parse_int(control_digest_thread_id_raw, name="CONTROL_DIGEST_THREAD_ID")
@@ -85,6 +88,7 @@ class Config:
             telegram_bot_token=token,
             source_chat_id=source_chat_id,
             control_chat_ids=control_chat_ids,
+            source_chat_username=source_chat_username,
             db_path=db_path,
             tz=tz,
             daily_digest_time=daily_digest_time,

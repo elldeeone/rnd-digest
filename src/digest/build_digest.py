@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from src.config import Config
 from src.db import Database
 from src.util.time import now_utc, to_iso_utc
+from src.util.telegram_links import build_message_link
 
 
 _URL_RE = re.compile(r"https?://\S+")
@@ -105,7 +106,16 @@ def build_extractive_digest(
                 continue
             author = msg["from_display"] or msg["from_username"] or "?"
             text_one_line = text.replace("\n", " ")
-            quotes.append(f'- [{msg["date_utc"]}] {author}: {text_one_line}')
+            link = build_message_link(
+                chat_id=config.source_chat_id,
+                message_id=int(msg["message_id"]),
+                thread_id=int(msg["thread_id"]) if msg["thread_id"] is not None else None,
+                username=config.source_chat_username,
+            )
+            if link:
+                quotes.append(f'- [{msg["date_utc"]}] {author}: {text_one_line}\n  {link}')
+            else:
+                quotes.append(f'- [{msg["date_utc"]}] {author}: {text_one_line}')
             if len(quotes) >= config.digest_max_quotes_per_topic:
                 break
         quotes.reverse()

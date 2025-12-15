@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.config import Config
 from src.db import Database
+from src.util.telegram_links import build_message_link
 
 
 def handle_search(*, db: Database, config: Config, args: str) -> str:
@@ -24,8 +25,13 @@ def handle_search(*, db: Database, config: Config, args: str) -> str:
         snippet = snippet.replace("\n", " ").strip()
         if len(snippet) > 200:
             snippet = snippet[:197] + "..."
-        lines.append(
-            f"- [{hit.date_utc}] {author}: {snippet} (msg_id={hit.message_id}, thread={hit.thread_id})"
+        lines.append(f"- [{hit.date_utc}] {author}: {snippet}")
+        link = build_message_link(
+            chat_id=config.source_chat_id,
+            message_id=hit.message_id,
+            thread_id=hit.thread_id,
+            username=config.source_chat_username,
         )
+        if link:
+            lines.append(f"  {link}")
     return "\n".join(lines)
-

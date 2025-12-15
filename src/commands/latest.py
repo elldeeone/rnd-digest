@@ -5,6 +5,7 @@ from datetime import timedelta
 from src.config import Config
 from src.db import Database
 from src.util.time import now_utc, to_iso_utc, parse_duration
+from src.util.telegram_links import build_message_link
 
 
 def _format_topic_label(*, title: str | None, thread_id: int | None) -> str:
@@ -73,5 +74,13 @@ def handle_latest(*, db: Database, config: Config, args: str) -> str:
             author = msg["from_display"] or msg["from_username"] or "?"
             text = (msg["text"] or "").strip().replace("\n", " ")
             lines.append(f"  • [{msg['date_utc']}] {author}: {text}")
+            link = build_message_link(
+                chat_id=config.source_chat_id,
+                message_id=int(msg["message_id"]),
+                thread_id=int(msg["thread_id"]) if msg["thread_id"] is not None else None,
+                username=config.source_chat_username,
+            )
+            if link:
+                lines.append(f"    {link}")
 
     return "\n".join(lines)

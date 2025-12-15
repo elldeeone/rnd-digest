@@ -42,6 +42,17 @@ class TelegramClient:
             raise RuntimeError(f"getUpdates failed: {payload!r}")
         return payload.get("result", [])
 
+    def get_chat(self, *, chat_id: int | str) -> dict[str, Any]:
+        resp = requests.get(f"{self.base_url}/getChat", params={"chat_id": chat_id}, timeout=30)
+        resp.raise_for_status()
+        payload = resp.json()
+        if not payload.get("ok"):
+            raise RuntimeError(f"getChat failed: {payload!r}")
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError(f"getChat returned unexpected payload: {payload!r}")
+        return result
+
     def send_message(
         self,
         *,

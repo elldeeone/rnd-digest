@@ -5,6 +5,7 @@ import time
 from dataclasses import replace
 from datetime import timedelta
 
+import requests
 from dotenv import load_dotenv
 
 from src.config import Config
@@ -63,18 +64,34 @@ def main() -> None:
 
     try:
         while True:
+            poll_now_iso = to_iso_utc(now_utc())
+            prior_backoff = backoff_seconds
             try:
                 updates = client.get_updates(
                     offset=offset,
                     timeout_seconds=config.poll_timeout_seconds,
                     allowed_updates=["message", "edited_message"],
                 )
+                db.set_state("last_poll_ok_at_utc", poll_now_iso)
+                if prior_backoff > 1.0:
+                    log.info("getUpdates recovered")
                 backoff_seconds = 1.0
+            except requests.exceptions.RequestException as exc:
+                db.set_state("last_poll_error_at_utc", poll_now_iso)
+                log.warning(
+                    "getUpdates failed (%s); retrying in %ss",
+                    exc.__class__.__name__,
+                    backoff_seconds,
+                )
+                time.sleep(backoff_seconds)
+                backoff_seconds = min(backoff_seconds * 2, 60.0)
+                updates = []
             except Exception:
+                db.set_state("last_poll_error_at_utc", poll_now_iso)
                 log.exception("getUpdates failed; retrying in %ss", backoff_seconds)
                 time.sleep(backoff_seconds)
                 backoff_seconds = min(backoff_seconds * 2, 60.0)
-                continue
+                updates = []
 
             for update in updates:
                 try:

@@ -215,16 +215,16 @@ class Database:
                     :ingested_at_utc
                 )
                 ON CONFLICT(chat_id, message_id) DO UPDATE SET
-                    thread_id = excluded.thread_id,
+                    thread_id = COALESCE(excluded.thread_id, messages.thread_id),
                     date_utc = excluded.date_utc,
-                    from_id = excluded.from_id,
-                    from_username = excluded.from_username,
-                    from_display = excluded.from_display,
-                    text = excluded.text,
+                    from_id = COALESCE(excluded.from_id, messages.from_id),
+                    from_username = COALESCE(excluded.from_username, messages.from_username),
+                    from_display = COALESCE(excluded.from_display, messages.from_display),
+                    text = COALESCE(excluded.text, messages.text),
                     raw_json = excluded.raw_json,
-                    reply_to_message_id = excluded.reply_to_message_id,
+                    reply_to_message_id = COALESCE(excluded.reply_to_message_id, messages.reply_to_message_id),
                     is_service = excluded.is_service,
-                    edit_date_utc = excluded.edit_date_utc,
+                    edit_date_utc = COALESCE(excluded.edit_date_utc, messages.edit_date_utc),
                     ingested_at_utc = excluded.ingested_at_utc;
                 """,
                 record,

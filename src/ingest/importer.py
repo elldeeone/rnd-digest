@@ -95,6 +95,90 @@ def _extract_messages(payload: Any, *, export_chat_name: str | None) -> list[dic
     raise SystemExit("Unrecognized Telegram export JSON structure (expected 'messages' list)")
 
 
+def _extract_export_topics(messages: list[dict[str, Any]]) -> dict[int, str]:
+    topics: dict[int, str] = {}
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("type") != "service":
+            continue
+        if msg.get("action") != "topic_created":
+            continue
+        message_id = msg.get("id")
+        title = msg.get("title")
+        if isinstance(message_id, int) and isinstance(title, str) and title.strip():
+            topics[message_id] = title.strip()
+    return topics
+
+
+def _export_has_topics(messages: list[dict[str, Any]]) -> bool:
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("type") != "service":
+            continue
+        if msg.get("action") in {"topic_created", "topic_edit"}:
+            return True
+    return False
+
+
+def _resolve_export_thread_ids(
+    *, messages: list[dict[str, Any]], topic_roots: dict[int, str], assume_general_thread: bool
+) -> dict[int, int | None]:
+    reply_to: dict[int, int] = {}
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        message_id = msg.get("id")
+        parent = msg.get("reply_to_message_id")
+        if isinstance(message_id, int) and isinstance(parent, int):
+            reply_to[message_id] = parent
+
+    cache: dict[int, int | None] = {}
+
+    general_thread_id: int | None = 1 if assume_general_thread else None
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        message_id = msg.get("id")
+        if not isinstance(message_id, int):
+            continue
+        if message_id in cache:
+            continue
+
+        path: list[int] = []
+        cur = message_id
+        seen: set[int] = set()
+
+        while True:
+            if cur in cache:
+                root = cache[cur]
+                break
+            if cur in topic_roots:
+                root = cur
+                break
+
+            parent = reply_to.get(cur)
+            if parent is None:
+                root = general_thread_id
+                break
+
+            if cur in seen:
+                root = general_thread_id
+                break
+            seen.add(cur)
+
+            path.append(cur)
+            cur = parent
+
+        for mid in path:
+            cache[mid] = root
+        cache[message_id] = root
+
+    return cache
+
+
 def import_export_json(
     *,
     db: Database,
@@ -104,6 +188,17 @@ def import_export_json(
     export_chat_name: str | None = None,
 ) -> tuple[int, int]:
     messages = _extract_messages(payload, export_chat_name=export_chat_name)
+
+    topics = _extract_export_topics(messages)
+    has_topics = _export_has_topics(messages)
+    if has_topics:
+        db.upsert_topic(chat_id=chat_id, thread_id=1, title="General", now_utc_iso=ingested_at_utc)
+    for thread_id, title in topics.items():
+        db.upsert_topic(chat_id=chat_id, thread_id=thread_id, title=title, now_utc_iso=ingested_at_utc)
+
+    thread_ids = _resolve_export_thread_ids(
+        messages=messages, topic_roots=topics, assume_general_thread=has_topics
+    )
 
     inserted = 0
     skipped = 0
@@ -140,7 +235,7 @@ def import_export_json(
             {
                 "chat_id": chat_id,
                 "message_id": message_id,
-                "thread_id": None,
+                "thread_id": thread_ids.get(message_id),
                 "date_utc": date_utc,
                 "from_id": _parse_export_from_id(msg.get("from_id")),
                 "from_username": None,
@@ -212,4 +307,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

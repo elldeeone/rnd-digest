@@ -1,25 +1,38 @@
 {
   "name": "Kaspa RND",
-  "type": "chat",
+  "type": "public_supergroup",
   "id": 123,
   "messages": [
     {
-      "id": 1,
-      "type": "message",
+      "id": 10,
+      "type": "service",
       "date": "2025-01-01T00:00:00",
       "date_unixtime": "1735689600",
-      "from": "Alice",
-      "from_id": "user111",
-      "text": "Hello world"
+      "actor": "Alice",
+      "actor_id": "user111",
+      "action": "topic_created",
+      "title": "Topic A",
+      "text": "",
+      "text_entities": []
     },
     {
-      "id": 2,
+      "id": 11,
       "type": "message",
       "date": "2025-01-01T00:01:00",
       "date_unixtime": "1735689660",
+      "from": "Alice",
+      "from_id": "user111",
+      "reply_to_message_id": 10,
+      "text": "Hello from topic"
+    },
+    {
+      "id": 12,
+      "type": "message",
+      "date": "2025-01-01T00:02:00",
+      "date_unixtime": "1735689720",
       "from": "Bob",
       "from_id": "user222",
-      "reply_to_message_id": 1,
+      "reply_to_message_id": 11,
       "text": [
         "hi ",
         { "type": "bold", "text": "there" },
@@ -27,21 +40,13 @@
       ]
     },
     {
-      "id": 3,
+      "id": 13,
       "type": "message",
-      "date": "2025-01-01T00:02:00",
-      "date_unixtime": "1735689720",
-      "from": "Charlie",
-      "from_id": "user333",
-      "edited_unixtime": "1735689780",
-      "text": "Edited message"
-    },
-    {
-      "id": 4,
-      "type": "service",
       "date": "2025-01-01T00:03:00",
       "date_unixtime": "1735689780",
-      "text": "Alice joined the group"
+      "from": "Charlie",
+      "from_id": "user333",
+      "text": "General message"
     }
   ]
 }

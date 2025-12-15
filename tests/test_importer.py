@@ -24,11 +24,25 @@ def test_importer_inserts_and_normalizes(tmp_path: Path) -> None:
     assert skipped == 0
 
     row = db.conn.execute(
-        "SELECT text, reply_to_message_id FROM messages WHERE chat_id = ? AND message_id = ?;",
-        (-100123, 2),
+        "SELECT text, reply_to_message_id, thread_id FROM messages WHERE chat_id = ? AND message_id = ?;",
+        (-100123, 12),
     ).fetchone()
     assert row is not None
-    assert row["reply_to_message_id"] == 1
+    assert row["reply_to_message_id"] == 11
+    assert row["thread_id"] == 10
     assert "hi there" in row["text"]
     assert "https://example.com/path" in row["text"]
 
+    general = db.conn.execute(
+        "SELECT thread_id FROM messages WHERE chat_id = ? AND message_id = ?;",
+        (-100123, 13),
+    ).fetchone()
+    assert general is not None
+    assert general["thread_id"] == 1
+
+    topic = db.conn.execute(
+        "SELECT title FROM topics WHERE chat_id = ? AND thread_id = ?;",
+        (-100123, 10),
+    ).fetchone()
+    assert topic is not None
+    assert topic["title"] == "Topic A"

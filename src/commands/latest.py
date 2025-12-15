@@ -72,8 +72,6 @@ def handle_latest(*, db: Database, config: Config, args: str) -> str:
         for msg in msgs[-3:]:
             author = msg["from_display"] or msg["from_username"] or "?"
             text = (msg["text"] or "").strip().replace("\n", " ")
-            if len(text) > 180:
-                text = text[:177] + "..."
             lines.append(f"  • [{msg['date_utc']}] {author}: {text}")
 
     return "\n".join(lines)

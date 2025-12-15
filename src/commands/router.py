@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from src.commands.debug import handle_debug_ids
@@ -11,6 +12,7 @@ from src.commands.search import handle_search
 from src.commands.topics import handle_backfill_topics, handle_set_topic_title
 from src.config import Config
 from src.db import Database
+from src.util.time import parse_duration
 
 
 @dataclass(frozen=True)
@@ -26,7 +28,8 @@ class TextResponse:
 
 @dataclass(frozen=True)
 class DigestRequest:
-    pass
+    duration: timedelta | None
+    advance_state: bool
 
 
 def _parse_command(text: str) -> tuple[str, str] | None:
@@ -67,7 +70,22 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
     if command == "debug_ids":
         return TextResponse(handle_debug_ids(message=message))
     if command == "digest":
-        return DigestRequest()
+        args_parts = args.split()
+        if not args_parts:
+            return DigestRequest(duration=None, advance_state=True)
+
+        token = args_parts[0].strip().lower()
+        if token in {"since_last", "since-last", "since"}:
+            return DigestRequest(duration=None, advance_state=True)
+
+        try:
+            duration = parse_duration(token)
+        except ValueError:
+            return TextResponse("Usage: /digest [6h|2d]\n\nTip: /digest (no args) posts since last digest.")
+
+        # Ad-hoc digest: do not move the scheduled digest boundary.
+        advance_state = any(part.lower() in {"advance", "commit"} for part in args_parts[1:])
+        return DigestRequest(duration=duration, advance_state=advance_state)
     if command in {"set_topic_title", "set_topic"}:
         return TextResponse(handle_set_topic_title(db=ctx.db, config=ctx.config, args=args))
     if command == "backfill_topics":

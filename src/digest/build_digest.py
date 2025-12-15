@@ -56,7 +56,7 @@ def build_extractive_digest(
     if not activity:
         lines.append("")
         lines.append("No messages in window.")
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     lines.append("")
     lines.append("Top threads")
@@ -104,7 +104,7 @@ def build_extractive_digest(
             if not text:
                 continue
             author = msg["from_display"] or msg["from_username"] or "?"
-            text_one_line = text.replace("\\n", " ")
+            text_one_line = text.replace("\n", " ")
             if len(text_one_line) > 240:
                 text_one_line = text_one_line[:237] + "..."
             quotes.append(f'- [{msg["date_utc"]}] {author}: {text_one_line}')
@@ -122,4 +122,4 @@ def build_extractive_digest(
             lines.append("Quotes:")
             lines.extend(quotes)
 
-    return "\\n".join(lines)
+    return "\n".join(lines)

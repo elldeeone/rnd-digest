@@ -99,6 +99,8 @@ def main() -> None:
                                 if isinstance(message.get("message_thread_id"), int)
                                 else None
                             ),
+                            duration=result.duration,
+                            advance_state=result.advance_state,
                         )
                 except Exception:
                     log.exception("Failed handling command message_id=%s", message.get("message_id"))
@@ -113,6 +115,8 @@ def main() -> None:
                         config=config,
                         target_chat_id=control_chat_id,
                         target_thread_id=config.control_digest_thread_id,
+                        duration=None,
+                        advance_state=True,
                     )
                 except Exception:
                     log.exception("Scheduled digest failed; will retry in 5 minutes")
@@ -136,11 +140,16 @@ def _run_digest(
     config: Config,
     target_chat_id: int,
     target_thread_id: int | None,
+    duration: timedelta | None,
+    advance_state: bool,
 ) -> None:
     now = now_utc()
     window_end = to_iso_utc(now)
-    last_end = db.get_state("last_digest_end_utc")
-    window_start = last_end or to_iso_utc(now - timedelta(hours=config.latest_default_window_hours))
+    if duration is not None:
+        window_start = to_iso_utc(now - duration)
+    else:
+        last_end = db.get_state("last_digest_end_utc")
+        window_start = last_end or to_iso_utc(now - timedelta(hours=config.latest_default_window_hours))
 
     digest = build_extractive_digest(
         db=db,
@@ -164,7 +173,8 @@ def _run_digest(
         created_at_utc=created_at,
         telegram_message_ids=send_res.message_ids,
     )
-    db.set_state("last_digest_end_utc", window_end)
+    if advance_state:
+        db.set_state("last_digest_end_utc", window_end)
 
 
 if __name__ == "__main__":

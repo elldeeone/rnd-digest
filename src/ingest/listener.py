@@ -104,6 +104,33 @@ def ingest_update(*, db: Database, config: Config, update: dict[str, Any]) -> No
     if thread_id is not None and chat_id == config.source_chat_id:
         db.upsert_topic(chat_id=chat_id, thread_id=thread_id, title=None, now_utc_iso=ingested_at_utc)
 
+    # Topic title best-effort mapping: sometimes a normal message is a reply to the
+    # topic creation service message, which includes the name.
+    if thread_id is not None and isinstance(reply_to, dict):
+        title = None
+        if isinstance(reply_to.get("forum_topic_created"), dict):
+            name = reply_to["forum_topic_created"].get("name")
+            title = name if isinstance(name, str) else None
+        elif isinstance(reply_to.get("forum_topic_edited"), dict):
+            name = reply_to["forum_topic_edited"].get("name")
+            title = name if isinstance(name, str) else None
+
+        if title:
+            reply_thread_id = (
+                reply_to.get("message_thread_id")
+                if isinstance(reply_to.get("message_thread_id"), int)
+                else reply_to.get("message_id")
+                if isinstance(reply_to.get("message_id"), int)
+                else None
+            )
+            if reply_thread_id is None or int(reply_thread_id) == int(thread_id):
+                db.upsert_topic(
+                    chat_id=chat_id,
+                    thread_id=int(thread_id),
+                    title=title,
+                    now_utc_iso=ingested_at_utc,
+                )
+
     if isinstance(message.get("forum_topic_created"), dict) and thread_id is not None:
         title = message["forum_topic_created"].get("name")
         title = title if isinstance(title, str) else None
@@ -115,4 +142,3 @@ def ingest_update(*, db: Database, config: Config, update: dict[str, Any]) -> No
         title = title if isinstance(title, str) else None
         db.upsert_topic(chat_id=chat_id, thread_id=thread_id, title=title, now_utc_iso=ingested_at_utc)
         log.info("Topic edited: chat_id=%s thread_id=%s title=%r", chat_id, thread_id, title)
-

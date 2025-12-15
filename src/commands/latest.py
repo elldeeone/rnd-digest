@@ -32,8 +32,17 @@ def handle_latest(*, db: Database, config: Config, args: str) -> str:
         window_end_utc=window_end,
         limit=12,
     )
-    thread_ids = [row["thread_id"] for row in activity if row["thread_id"] is not None]
+    thread_ids = [int(row["thread_id"]) for row in activity if row["thread_id"] is not None]
     titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+    missing = [tid for tid in thread_ids if tid not in titles]
+    if missing:
+        db.backfill_topic_titles_from_raw_json(
+            chat_id=config.source_chat_id,
+            thread_ids=missing,
+            limit=500,
+            now_utc_iso=window_end,
+        )
+        titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     lines: list[str] = []
     lines.append(f"Latest ({args or f'{config.latest_default_window_hours}h'})")
@@ -68,4 +77,3 @@ def handle_latest(*, db: Database, config: Config, args: str) -> str:
             lines.append(f"  • [{msg['date_utc']}] {author}: {text}")
 
     return "\n".join(lines)
-

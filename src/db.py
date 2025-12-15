@@ -364,6 +364,113 @@ class Database:
 
         return {int(row["thread_id"]): str(row["title"]) for row in rows if row["title"]}
 
+    def backfill_topic_titles_from_raw_json(
+        self,
+        *,
+        chat_id: int,
+        thread_ids: Iterable[int] | None,
+        limit: int,
+        now_utc_iso: str,
+    ) -> int:
+        """
+        Best-effort topic title recovery.
+
+        Telegram Bot API doesn't provide a way to fetch a topic title by message_thread_id;
+        instead we learn titles from forum service messages (forum_topic_created/edited).
+        This scans already-ingested raw_json payloads (updates/messages) to populate topics.
+        Returns the number of distinct thread_ids updated with a title.
+        """
+
+        params: list[Any] = [chat_id]
+        where = "m.chat_id = ? AND (m.raw_json LIKE '%forum_topic_created%' OR m.raw_json LIKE '%forum_topic_edited%')"
+
+        if thread_ids is not None:
+            ids = [int(tid) for tid in thread_ids]
+            if not ids:
+                return 0
+            placeholders = ",".join(["?"] * len(ids))
+            where += f" AND m.thread_id IN ({placeholders})"
+            params.extend(ids)
+
+        params.append(int(limit))
+
+        rows = self.conn.execute(
+            f"""
+            SELECT m.thread_id, m.raw_json
+            FROM messages m
+            WHERE {where}
+            ORDER BY m.date_utc DESC
+            LIMIT ?;
+            """,
+            params,
+        ).fetchall()
+
+        updated_threads: set[int] = set()
+
+        for row in rows:
+            fallback_thread_id = int(row["thread_id"]) if row["thread_id"] is not None else None
+            raw = row["raw_json"]
+            if not isinstance(raw, str):
+                continue
+
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            message = None
+            if isinstance(obj, dict) and ("message" in obj or "edited_message" in obj):
+                msg = obj.get("message") or obj.get("edited_message")
+                if isinstance(msg, dict):
+                    message = msg
+            elif isinstance(obj, dict):
+                # Some ingestors store message objects directly.
+                message = obj
+
+            if not isinstance(message, dict):
+                continue
+
+            def _extract_name(container: Any) -> str | None:
+                if not isinstance(container, dict):
+                    return None
+                name = container.get("name")
+                return name.strip() if isinstance(name, str) and name.strip() else None
+
+            title = _extract_name(message.get("forum_topic_created")) or _extract_name(
+                message.get("forum_topic_edited")
+            )
+            thread_id = (
+                message.get("message_thread_id") if isinstance(message.get("message_thread_id"), int) else None
+            )
+
+            # Some updates include the topic create message in reply_to_message.
+            if title is None and isinstance(message.get("reply_to_message"), dict):
+                reply = message["reply_to_message"]
+                title = _extract_name(reply.get("forum_topic_created")) or _extract_name(
+                    reply.get("forum_topic_edited")
+                )
+                thread_id = (
+                    reply.get("message_thread_id")
+                    if isinstance(reply.get("message_thread_id"), int)
+                    else reply.get("message_id")
+                    if isinstance(reply.get("message_id"), int)
+                    else thread_id
+                )
+
+            resolved_thread_id = int(thread_id) if isinstance(thread_id, int) else fallback_thread_id
+            if resolved_thread_id is None or title is None:
+                continue
+
+            self.upsert_topic(
+                chat_id=chat_id,
+                thread_id=resolved_thread_id,
+                title=title,
+                now_utc_iso=now_utc_iso,
+            )
+            updated_threads.add(resolved_thread_id)
+
+        return len(updated_threads)
+
     def search_messages(self, *, chat_id: int, query: str, limit: int = 10) -> list[SearchHit]:
         try:
             rows = self.conn.execute(
@@ -440,4 +547,3 @@ class Database:
                 ),
             )
         return int(cur.lastrowid)
-

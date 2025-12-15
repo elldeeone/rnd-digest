@@ -8,6 +8,7 @@ from src.commands.health import handle_health
 from src.commands.help import handle_help
 from src.commands.latest import handle_latest
 from src.commands.search import handle_search
+from src.commands.topics import handle_backfill_topics, handle_set_topic_title
 from src.config import Config
 from src.db import Database
 
@@ -67,5 +68,9 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
         return TextResponse(handle_debug_ids(message=message))
     if command == "digest":
         return DigestRequest()
+    if command in {"set_topic_title", "set_topic"}:
+        return TextResponse(handle_set_topic_title(db=ctx.db, config=ctx.config, args=args))
+    if command == "backfill_topics":
+        return TextResponse(handle_backfill_topics(db=ctx.db, config=ctx.config, args=args))
 
     return TextResponse(f"Unknown command: /{command}\n\n{handle_help()}")

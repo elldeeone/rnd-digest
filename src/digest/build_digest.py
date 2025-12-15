@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import Config
 from src.db import Database
+from src.util.time import now_utc, to_iso_utc
 
 
 _URL_RE = re.compile(r"https?://\S+")
@@ -36,8 +37,17 @@ def build_extractive_digest(
         window_end_utc=window_end_utc,
         limit=config.digest_max_topics,
     )
-    thread_ids = [row["thread_id"] for row in activity if row["thread_id"] is not None]
+    thread_ids = [int(row["thread_id"]) for row in activity if row["thread_id"] is not None]
     titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+    missing = [tid for tid in thread_ids if tid not in titles]
+    if missing:
+        db.backfill_topic_titles_from_raw_json(
+            chat_id=config.source_chat_id,
+            thread_ids=missing,
+            limit=2000,
+            now_utc_iso=to_iso_utc(now_utc()),
+        )
+        titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     lines: list[str] = []
     lines.append(f"Daily Digest — {local_day} ({config.tz})")

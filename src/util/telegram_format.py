@@ -8,8 +8,11 @@ TELEGRAM_MAX_MESSAGE_CHARS = 4096
 
 _ORPHAN_HEADERS = {
     "Summary",
+    "Summary:",
     "Top threads",
     "By topic",
+    "Open questions:",
+    "My read:",
     "Links:",
     "Quotes:",
     "Answer",

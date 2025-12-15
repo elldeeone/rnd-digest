@@ -40,10 +40,16 @@ _EXCERPT_KEYWORDS = [
     "vardiff",
 ]
 
+_LOG_LIKE_RE = re.compile(r"\bINFO\b|\[\[Instance\s+\d+\]\]|\bProcessed\s+\d+\s+blocks\b")
+
 
 def _is_high_signal(text: str) -> bool:
     lower = text.lower()
     return any(k in lower for k in _EXCERPT_KEYWORDS)
+
+
+def _is_log_like(text: str) -> bool:
+    return bool(_LOG_LIKE_RE.search(text))
 
 
 def _excerpt(text: str, *, max_chars: int) -> str:
@@ -62,8 +68,14 @@ def _excerpt(text: str, *, max_chars: int) -> str:
     hits = [h for h in hits if h >= 0]
     if hits:
         idx = min(hits)
-        # Include some leading context, but bias toward showing the keyword.
-        start = max(0, idx - max_chars // 4)
+        is_log = _is_log_like(text)
+        if is_log:
+            # For logs, start at the keyword to avoid messy mid-line truncation.
+            max_chars = min(max_chars, 240)
+            start = idx
+        else:
+            # Include some leading context, but bias toward showing the keyword.
+            start = max(0, idx - max_chars // 4)
         end = min(len(text), start + max_chars)
         excerpt = text[start:end].strip()
         prefix = "…" if start > 0 else ""
@@ -424,6 +436,7 @@ def build_digest(
         "- OVERALL: 2–4 bullets max\n"
         "- For each TOPIC: Summary 3 bullets, Open questions 3 bullets, My read 2 bullets max\n"
         "- TOP_THREADS: one short clause per topic; do not repeat the topic name\n\n"
+        "You MUST include a TOPIC block for every topic id present (T1..Tn). Do not omit topics.\n\n"
         "Return sections using these exact headings:\n"
         "### OVERALL\n"
         "- ...\n\n"
@@ -487,7 +500,7 @@ def build_digest(
             elif head.upper() == "TOP_THREADS":
                 current = ("top_threads", None)
             else:
-                match = re.match(r"TOPIC\s+T(\d+)", head, flags=re.IGNORECASE)
+                match = re.match(r"TOPIC\W*T(\d+)", head, flags=re.IGNORECASE)
                 if match:
                     current = ("topic", int(match.group(1)))
                     topic_blocks.setdefault(int(match.group(1)), [])
@@ -503,7 +516,7 @@ def build_digest(
             if line.strip():
                 overall_lines.append(line)
         elif section == "top_threads":
-            match = re.match(r"^\s*-?\s*T(\d+)\s*:\s*(.+)$", line)
+            match = re.match(r"^\s*-?\s*T(\d+)\s*[:\-]\s*(.+)$", line)
             if match:
                 top_thread_blurbs[int(match.group(1))] = match.group(2).strip()
         elif section == "topic" and idx is not None:

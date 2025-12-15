@@ -2,7 +2,7 @@
 
 A Telegram bot that mirrors a source chat into SQLite and provides digest/query commands in a private control chat.
 
-This repo is the implementation of `plan.md` (Milestone A + basic digest plumbing).
+This repo is the implementation of `plan.md` (Milestones A–C).
 
 ## Quick start (local)
 
@@ -19,6 +19,16 @@ This repo is the implementation of `plan.md` (Milestone A + basic digest plumbin
 Place exported JSON under `./data/exports/`, then run:
 
 `python -m src.ingest.importer --chat-id "$SOURCE_CHAT_ID" --path ./data/exports/<export>.json`
+
+## LLM (OpenRouter)
+
+The bot can optionally use an LLM for `/digest` summaries and `/ask` Q&A.
+
+Set in `.env`:
+
+- `LLM_PROVIDER=openrouter`
+- `OPENROUTER_API_KEY=...`
+- `OPENROUTER_MODEL=...` (whatever model name OpenRouter exposes)
 
 ## Docker
 

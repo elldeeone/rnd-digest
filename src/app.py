@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from src.config import Config
 from src.db import Database
 from src.commands.router import CommandContext, DigestRequest, TextResponse, handle_command
-from src.digest.build_digest import build_extractive_digest
+from src.digest.build_digest import build_digest
 from src.ingest.listener import ingest_update
 from src.telegram_client import TelegramClient
 from src.util.logging import configure_logging
@@ -166,7 +166,7 @@ def _run_digest(
         last_end = db.get_state("last_digest_end_utc")
         window_start = last_end or to_iso_utc(now - timedelta(hours=config.latest_default_window_hours))
 
-    digest = build_extractive_digest(
+    digest = build_digest(
         db=db,
         config=config,
         window_start_utc=window_start,

@@ -33,6 +33,16 @@ class SearchHit:
     snippet: str | None
 
 
+@dataclass(frozen=True)
+class TopicRollup:
+    chat_id: int
+    thread_id: int | None
+    summary: str
+    last_message_id: int | None
+    updated_at_utc: str
+    model: str | None
+
+
 class Database:
     def __init__(self, db_path: str) -> None:
         _ensure_parent_dir(db_path)
@@ -83,6 +93,21 @@ class Database:
                     title TEXT NULL,
                     created_at_utc TEXT NULL,
                     updated_at_utc TEXT NULL,
+                    UNIQUE(chat_id, thread_id)
+                );
+                """
+            )
+
+            self.conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS topic_rollups (
+                    id INTEGER PRIMARY KEY,
+                    chat_id INTEGER NOT NULL,
+                    thread_id INTEGER NULL,
+                    summary TEXT NOT NULL,
+                    last_message_id INTEGER NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    model TEXT NULL,
                     UNIQUE(chat_id, thread_id)
                 );
                 """
@@ -265,6 +290,203 @@ class Database:
             (chat_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
+
+    def get_topic_rollups(
+        self, *, chat_id: int, thread_ids: Iterable[int | None]
+    ) -> dict[int | None, TopicRollup]:
+        ids = [tid for tid in thread_ids]
+        if not ids:
+            return {}
+
+        # thread_id can be NULL (no topic); handle separately.
+        want_null = any(tid is None for tid in ids)
+        non_null = sorted({int(tid) for tid in ids if tid is not None})
+
+        rows: list[sqlite3.Row] = []
+        if non_null:
+            placeholders = ",".join(["?"] * len(non_null))
+            rows.extend(
+                self.conn.execute(
+                    f"""
+                    SELECT chat_id, thread_id, summary, last_message_id, updated_at_utc, model
+                    FROM topic_rollups
+                    WHERE chat_id = ? AND thread_id IN ({placeholders});
+                    """,
+                    (chat_id, *non_null),
+                ).fetchall()
+            )
+        if want_null:
+            rows.extend(
+                self.conn.execute(
+                    """
+                    SELECT chat_id, thread_id, summary, last_message_id, updated_at_utc, model
+                    FROM topic_rollups
+                    WHERE chat_id = ? AND thread_id IS NULL;
+                    """,
+                    (chat_id,),
+                ).fetchall()
+            )
+
+        out: dict[int | None, TopicRollup] = {}
+        for row in rows:
+            thread_id = int(row["thread_id"]) if row["thread_id"] is not None else None
+            out[thread_id] = TopicRollup(
+                chat_id=int(row["chat_id"]),
+                thread_id=thread_id,
+                summary=str(row["summary"]),
+                last_message_id=int(row["last_message_id"]) if row["last_message_id"] is not None else None,
+                updated_at_utc=str(row["updated_at_utc"]),
+                model=str(row["model"]) if row["model"] is not None else None,
+            )
+        return out
+
+    def upsert_topic_rollup(
+        self,
+        *,
+        chat_id: int,
+        thread_id: int | None,
+        summary: str,
+        last_message_id: int | None,
+        updated_at_utc: str,
+        model: str | None,
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO topic_rollups(chat_id, thread_id, summary, last_message_id, updated_at_utc, model)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chat_id, thread_id) DO UPDATE SET
+                    summary = excluded.summary,
+                    last_message_id = excluded.last_message_id,
+                    updated_at_utc = excluded.updated_at_utc,
+                    model = excluded.model;
+                """,
+                (chat_id, thread_id, summary, last_message_id, updated_at_utc, model),
+            )
+
+    def get_last_messages_for_topic(
+        self,
+        *,
+        chat_id: int,
+        thread_id: int | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        if thread_id is None:
+            where_thread = "thread_id IS NULL"
+            params: dict[str, Any] = {}
+        else:
+            where_thread = "thread_id = :thread_id"
+            params = {"thread_id": thread_id}
+
+        rows = list(
+            self.conn.execute(
+                f"""
+                SELECT
+                    message_id,
+                    thread_id,
+                    date_utc,
+                    from_username,
+                    from_display,
+                    text
+                FROM messages
+                WHERE
+                    chat_id = :chat_id
+                    AND is_service = 0
+                    AND {where_thread}
+                ORDER BY message_id DESC
+                LIMIT :limit;
+                """,
+                {"chat_id": chat_id, "limit": limit, **params},
+            )
+        )
+        rows.reverse()
+        return rows
+
+    def get_messages_for_topic_after_message_id(
+        self,
+        *,
+        chat_id: int,
+        thread_id: int | None,
+        after_message_id: int,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        if thread_id is None:
+            where_thread = "thread_id IS NULL"
+            params: dict[str, Any] = {}
+        else:
+            where_thread = "thread_id = :thread_id"
+            params = {"thread_id": thread_id}
+
+        return list(
+            self.conn.execute(
+                f"""
+                SELECT
+                    message_id,
+                    thread_id,
+                    date_utc,
+                    from_username,
+                    from_display,
+                    text
+                FROM messages
+                WHERE
+                    chat_id = :chat_id
+                    AND is_service = 0
+                    AND {where_thread}
+                    AND message_id > :after_message_id
+                ORDER BY message_id ASC
+                LIMIT :limit;
+                """,
+                {"chat_id": chat_id, "after_message_id": after_message_id, "limit": limit, **params},
+            )
+        )
+
+    def get_last_messages_for_topic_in_window(
+        self,
+        *,
+        chat_id: int,
+        thread_id: int | None,
+        window_start_utc: str,
+        window_end_utc: str,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        if thread_id is None:
+            where_thread = "thread_id IS NULL"
+            params: dict[str, Any] = {}
+        else:
+            where_thread = "thread_id = :thread_id"
+            params = {"thread_id": thread_id}
+
+        rows = list(
+            self.conn.execute(
+                f"""
+                SELECT
+                    message_id,
+                    thread_id,
+                    date_utc,
+                    from_username,
+                    from_display,
+                    text
+                FROM messages
+                WHERE
+                    chat_id = :chat_id
+                    AND is_service = 0
+                    AND {where_thread}
+                    AND date_utc >= :window_start_utc
+                    AND date_utc <= :window_end_utc
+                ORDER BY date_utc DESC
+                LIMIT :limit;
+                """,
+                {
+                    "chat_id": chat_id,
+                    "window_start_utc": window_start_utc,
+                    "window_end_utc": window_end_utc,
+                    "limit": limit,
+                    **params,
+                },
+            )
+        )
+        rows.reverse()
+        return rows
 
     def get_topic_activity(
         self,
@@ -471,10 +693,29 @@ class Database:
 
         return len(updated_threads)
 
-    def search_messages(self, *, chat_id: int, query: str, limit: int = 10) -> list[SearchHit]:
+    def search_messages(
+        self,
+        *,
+        chat_id: int,
+        query: str,
+        limit: int = 10,
+        window_start_utc: str | None = None,
+        window_end_utc: str | None = None,
+    ) -> list[SearchHit]:
+        where_parts = ["m.chat_id = :chat_id", "messages_fts MATCH :query"]
+        params: dict[str, Any] = {"chat_id": chat_id, "query": query, "limit": limit}
+        if window_start_utc is not None:
+            where_parts.append("m.date_utc >= :window_start_utc")
+            params["window_start_utc"] = window_start_utc
+        if window_end_utc is not None:
+            where_parts.append("m.date_utc <= :window_end_utc")
+            params["window_end_utc"] = window_end_utc
+
+        where_sql = " AND ".join(where_parts)
+
         try:
             rows = self.conn.execute(
-                """
+                f"""
                 SELECT
                     m.chat_id,
                     m.message_id,
@@ -486,11 +727,11 @@ class Database:
                     snippet(messages_fts, 0, '[', ']', '…', 10) AS snippet
                 FROM messages_fts
                 JOIN messages m ON m.id = messages_fts.rowid
-                WHERE m.chat_id = :chat_id AND messages_fts MATCH :query
+                WHERE {where_sql}
                 ORDER BY bm25(messages_fts)
                 LIMIT :limit;
                 """,
-                {"chat_id": chat_id, "query": query, "limit": limit},
+                params,
             ).fetchall()
         except sqlite3.OperationalError as exc:
             raise RuntimeError("FTS search unavailable (FTS5 not enabled)") from exc

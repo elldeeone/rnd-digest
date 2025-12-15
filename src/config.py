@@ -17,6 +17,13 @@ def _parse_csv_ints(value: str) -> set[int]:
     return {int(item) for item in items if item}
 
 
+def _parse_float(value: str, *, name: str) -> float:
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid float for {name}: {value!r}") from exc
+
+
 def _first_non_empty(values: Iterable[str | None]) -> str | None:
     for value in values:
         if value is not None and value.strip():
@@ -43,6 +50,21 @@ class Config:
     digest_max_topics: int = 12
     digest_max_quotes_per_topic: int = 3
     digest_max_messages_per_topic: int = 80
+
+    llm_provider: str = "none"
+    llm_timeout_seconds: int = 60
+
+    openrouter_api_key: str | None = None
+    openrouter_model: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_site_url: str | None = None
+    openrouter_app_name: str | None = None
+
+    digest_llm_max_tokens: int = 1200
+    digest_llm_temperature: float = 0.2
+
+    ask_llm_max_tokens: int = 800
+    ask_llm_temperature: float = 0.1
 
     @staticmethod
     def from_env() -> "Config":
@@ -77,6 +99,25 @@ class Config:
 
         source_chat_username = _first_non_empty([os.getenv("SOURCE_CHAT_USERNAME")])
 
+        llm_provider = os.getenv("LLM_PROVIDER", "none").strip().lower()
+        llm_timeout_seconds = int(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+
+        openrouter_api_key = _first_non_empty([os.getenv("OPENROUTER_API_KEY")])
+        openrouter_model = _first_non_empty([os.getenv("OPENROUTER_MODEL")])
+        openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
+        openrouter_site_url = _first_non_empty([os.getenv("OPENROUTER_SITE_URL")])
+        openrouter_app_name = _first_non_empty([os.getenv("OPENROUTER_APP_NAME")])
+
+        digest_llm_max_tokens = int(os.getenv("DIGEST_LLM_MAX_TOKENS", "1200"))
+        digest_llm_temperature = _parse_float(
+            os.getenv("DIGEST_LLM_TEMPERATURE", "0.2"), name="DIGEST_LLM_TEMPERATURE"
+        )
+
+        ask_llm_max_tokens = int(os.getenv("ASK_LLM_MAX_TOKENS", "800"))
+        ask_llm_temperature = _parse_float(
+            os.getenv("ASK_LLM_TEMPERATURE", "0.1"), name="ASK_LLM_TEMPERATURE"
+        )
+
         control_digest_thread_id_raw = _first_non_empty([os.getenv("CONTROL_DIGEST_THREAD_ID")])
         control_digest_thread_id = (
             _parse_int(control_digest_thread_id_raw, name="CONTROL_DIGEST_THREAD_ID")
@@ -98,4 +139,15 @@ class Config:
             digest_max_topics=digest_max_topics,
             digest_max_quotes_per_topic=digest_max_quotes_per_topic,
             digest_max_messages_per_topic=digest_max_messages_per_topic,
+            llm_provider=llm_provider,
+            llm_timeout_seconds=llm_timeout_seconds,
+            openrouter_api_key=openrouter_api_key,
+            openrouter_model=openrouter_model,
+            openrouter_base_url=openrouter_base_url,
+            openrouter_site_url=openrouter_site_url,
+            openrouter_app_name=openrouter_app_name,
+            digest_llm_max_tokens=digest_llm_max_tokens,
+            digest_llm_temperature=digest_llm_temperature,
+            ask_llm_max_tokens=ask_llm_max_tokens,
+            ask_llm_temperature=ask_llm_temperature,
         )

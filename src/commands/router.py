@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+from src.commands.ask import handle_ask
 from src.commands.debug import handle_debug_ids
 from src.commands.health import handle_health
 from src.commands.help import handle_help
 from src.commands.latest import handle_latest
+from src.commands.rollup import handle_rollup
 from src.commands.search import handle_search
 from src.commands.topics import handle_backfill_topics, handle_set_topic_title
 from src.config import Config
@@ -67,6 +69,10 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
         return TextResponse(handle_latest(db=ctx.db, config=ctx.config, args=args))
     if command == "search":
         return TextResponse(handle_search(db=ctx.db, config=ctx.config, args=args))
+    if command == "ask":
+        return TextResponse(handle_ask(db=ctx.db, config=ctx.config, args=args))
+    if command == "rollup":
+        return TextResponse(handle_rollup(db=ctx.db, config=ctx.config, args=args))
     if command == "debug_ids":
         return TextResponse(handle_debug_ids(message=message))
     if command == "digest":

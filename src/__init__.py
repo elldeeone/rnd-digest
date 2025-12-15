@@ -1,0 +1,2 @@
+"""Kaspa RMD digest bot."""
+

@@ -1,0 +1,48 @@
+{
+  "name": "Kaspa RMD",
+  "type": "chat",
+  "id": 123,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2025-01-01T00:00:00",
+      "date_unixtime": "1735689600",
+      "from": "Alice",
+      "from_id": "user111",
+      "text": "Hello world"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2025-01-01T00:01:00",
+      "date_unixtime": "1735689660",
+      "from": "Bob",
+      "from_id": "user222",
+      "reply_to_message_id": 1,
+      "text": [
+        "hi ",
+        { "type": "bold", "text": "there" },
+        " https://example.com/path?q=1"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2025-01-01T00:02:00",
+      "date_unixtime": "1735689720",
+      "from": "Charlie",
+      "from_id": "user333",
+      "edited_unixtime": "1735689780",
+      "text": "Edited message"
+    },
+    {
+      "id": 4,
+      "type": "service",
+      "date": "2025-01-01T00:03:00",
+      "date_unixtime": "1735689780",
+      "text": "Alice joined the group"
+    }
+  ]
+}
+

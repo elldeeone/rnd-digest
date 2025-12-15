@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+.env
+.venv/
+venv/
+
+data/
+logs/
+
+# Keep the build plan out of git if desired
+plan.md

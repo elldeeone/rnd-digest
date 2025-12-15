@@ -50,6 +50,7 @@ class Config:
     digest_max_topics: int = 12
     digest_max_quotes_per_topic: int = 3
     digest_max_messages_per_topic: int = 80
+    digest_quote_max_chars: int = 320
 
     llm_provider: str = "none"
     llm_timeout_seconds: int = 60
@@ -96,6 +97,7 @@ class Config:
         digest_max_topics = int(os.getenv("DIGEST_MAX_TOPICS", "12"))
         digest_max_quotes_per_topic = int(os.getenv("DIGEST_MAX_QUOTES_PER_TOPIC", "3"))
         digest_max_messages_per_topic = int(os.getenv("DIGEST_MAX_MESSAGES_PER_TOPIC", "80"))
+        digest_quote_max_chars = int(os.getenv("DIGEST_QUOTE_MAX_CHARS", "320"))
 
         source_chat_username = _first_non_empty([os.getenv("SOURCE_CHAT_USERNAME")])
 
@@ -139,6 +141,7 @@ class Config:
             digest_max_topics=digest_max_topics,
             digest_max_quotes_per_topic=digest_max_quotes_per_topic,
             digest_max_messages_per_topic=digest_max_messages_per_topic,
+            digest_quote_max_chars=digest_quote_max_chars,
             llm_provider=llm_provider,
             llm_timeout_seconds=llm_timeout_seconds,
             openrouter_api_key=openrouter_api_key,

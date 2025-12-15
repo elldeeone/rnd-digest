@@ -1,2 +1,1 @@
-"""Kaspa RMD digest bot."""
-
+"""Kaspa RND digest bot."""

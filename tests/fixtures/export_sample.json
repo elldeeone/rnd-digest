@@ -1,5 +1,5 @@
 {
-  "name": "Kaspa RMD",
+  "name": "Kaspa RND",
   "type": "chat",
   "id": 123,
   "messages": [
@@ -45,4 +45,3 @@
     }
   ]
 }
-

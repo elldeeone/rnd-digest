@@ -1,4 +1,4 @@
-# Kaspa RMD Digest Bot
+# Kaspa RND Digest Bot
 
 A Telegram bot that mirrors a source chat into SQLite and provides digest/query commands in a private control chat.
 

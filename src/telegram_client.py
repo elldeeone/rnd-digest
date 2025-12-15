@@ -64,10 +64,18 @@ class TelegramClient:
                 params["parse_mode"] = parse_mode
 
             resp = requests.post(f"{self.base_url}/sendMessage", data=params, timeout=30)
-            resp.raise_for_status()
-            payload = resp.json()
-            if not payload.get("ok"):
-                raise RuntimeError(f"sendMessage failed: {payload!r}")
+            try:
+                payload = resp.json()
+            except ValueError:
+                resp.raise_for_status()
+                raise RuntimeError(f"sendMessage failed: HTTP {resp.status_code} (non-JSON response)")
+
+            if not resp.ok or not payload.get("ok"):
+                description = payload.get("description")
+                raise RuntimeError(
+                    f"sendMessage failed: HTTP {resp.status_code}, {description or payload!r}"
+                )
+
             message_ids.append(int(payload["result"]["message_id"]))
         return SendResult(message_ids=message_ids)
 
@@ -78,18 +86,11 @@ class TelegramClient:
         text: str,
         message_thread_id: int | None = None,
     ) -> SendResult:
-        try:
-            return self.send_message(
-                chat_id=chat_id,
-                text=text,
-                message_thread_id=message_thread_id,
-                parse_mode="MarkdownV2",
-            )
-        except Exception:
-            log.exception("MarkdownV2 send failed; retrying as plain text")
-            return self.send_message(
-                chat_id=chat_id,
-                text=text,
-                message_thread_id=message_thread_id,
-                parse_mode=None,
-            )
+        # Intentionally send as plain text (no parse_mode) to avoid Telegram MarkdownV2
+        # escaping issues for command output.
+        return self.send_message(
+            chat_id=chat_id,
+            text=text,
+            message_thread_id=message_thread_id,
+            parse_mode=None,
+        )

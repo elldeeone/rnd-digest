@@ -722,6 +722,51 @@ class Database:
 
         return len(updated_threads)
 
+    def backfill_topic_titles_from_message_text(
+        self,
+        *,
+        chat_id: int,
+        thread_ids: Iterable[int],
+        now_utc_iso: str,
+    ) -> int:
+        """
+        Fallback topic title recovery: use the first message's text.
+        """
+        ids = [int(tid) for tid in thread_ids]
+        if not ids:
+            return 0
+        
+        updated_count = 0
+        for tid in ids:
+            # Find the first message in this thread that has text
+            row = self.conn.execute(
+                """
+                SELECT text
+                FROM messages
+                WHERE chat_id = ? AND thread_id = ? AND text IS NOT NULL AND text != ''
+                ORDER BY message_id ASC
+                LIMIT 1;
+                """,
+                (chat_id, tid),
+            ).fetchone()
+            
+            if row:
+                text = row["text"].strip()
+                # Truncate nicely
+                title = f"Thread: {text[:40].strip()}..."
+                if len(text) <= 40:
+                    title = f"Thread: {text}"
+                    
+                self.upsert_topic(
+                    chat_id=chat_id,
+                    thread_id=tid,
+                    title=title,
+                    now_utc_iso=now_utc_iso,
+                )
+                updated_count += 1
+                
+        return updated_count
+
     def search_messages(
         self,
         *,

@@ -66,6 +66,12 @@ def ingest_update(*, db: Database, config: Config, update: dict[str, Any]) -> No
     from_display = " ".join([part for part in [first_name, last_name] if part]) or None
 
     thread_id = message.get("message_thread_id") if isinstance(message.get("message_thread_id"), int) else None
+    
+    # In forum groups, messages without message_thread_id belong to the General thread (id=1)
+    chat_obj = message.get("chat", {})
+    is_forum = chat_obj.get("is_forum") is True
+    if thread_id is None and is_forum:
+        thread_id = 1
     reply_to_message_id = None
     reply_to = message.get("reply_to_message")
     if isinstance(reply_to, dict) and isinstance(reply_to.get("message_id"), int):

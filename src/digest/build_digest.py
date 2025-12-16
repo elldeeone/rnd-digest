@@ -104,7 +104,7 @@ def _topic_label(*, title: str | None, thread_id: int | None) -> str:
     if title:
         return title
     if thread_id is None:
-        return "No topic"
+        return "General"
     return f"Thread {thread_id}"
 
 
@@ -135,6 +135,14 @@ def build_extractive_digest(
             now_utc_iso=to_iso_utc(now_utc()),
         )
         titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+        missing = [tid for tid in thread_ids if tid not in titles]
+        if missing:
+            db.backfill_topic_titles_from_message_text(
+                chat_id=config.source_chat_id,
+                thread_ids=missing,
+                now_utc_iso=to_iso_utc(now_utc()),
+            )
+            titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     lines: list[str] = []
     lines.append(f"Daily Digest — {local_day} ({config.tz})")
@@ -304,6 +312,14 @@ def build_digest(
             now_utc_iso=to_iso_utc(now_utc()),
         )
         titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+        missing = [tid for tid in thread_ids if tid not in titles]
+        if missing:
+            db.backfill_topic_titles_from_message_text(
+                chat_id=config.source_chat_id,
+                thread_ids=missing,
+                now_utc_iso=to_iso_utc(now_utc()),
+            )
+            titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     rollups = db.get_topic_rollups(chat_id=config.source_chat_id, thread_ids=[row["thread_id"] for row in activity])
 

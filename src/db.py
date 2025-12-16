@@ -817,3 +817,43 @@ class Database:
                 ),
             )
         return int(cur.lastrowid)
+
+    def get_digest_by_telegram_message_id(
+        self, *, chat_id: int, telegram_message_id: int, limit: int = 50
+    ) -> str | None:
+        """
+        Best-effort lookup for a digest by one of its Telegram message ids.
+
+        `telegram_message_ids` is stored as JSON; we scan a small recent window
+        to avoid relying on SQLite JSON extensions.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT digest_markdown, telegram_message_ids
+            FROM digests
+            WHERE chat_id = ?
+            ORDER BY id DESC
+            LIMIT ?;
+            """,
+            (chat_id, int(limit)),
+        ).fetchall()
+
+        want = int(telegram_message_id)
+        for row in rows:
+            raw = row["telegram_message_ids"]
+            if raw is None:
+                continue
+            try:
+                ids = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(ids, list):
+                continue
+            for item in ids:
+                try:
+                    item_id = int(item)
+                except Exception:
+                    continue
+                if item_id == want:
+                    return str(row["digest_markdown"])
+        return None

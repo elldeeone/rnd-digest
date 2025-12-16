@@ -42,9 +42,10 @@ Optional: keep rollups fresh before scheduled digests:
 - `/latest [6h|2d] [brief|full] [peek]` (no args = since last check-in; shortcut: send `latest`)
 - `/search <terms>`
 - `/ask [6h|2d|all] <question>`
+- `/teach <thread_id> [6h|2d|1w] [detail]` (teach-me explainer)
 - `/topic <thread_id> [6h|2d|1w]`
 - `/rollup <thread_id> [6h|2d|all|rebuild]`
-- `/digest [6h|2d]` (no args = since last digest)
+- `/digest [6h|2d] [overview|full] [advance]` (default = overview w/ buttons; no args = since last digest)
 
 ## Docker
 

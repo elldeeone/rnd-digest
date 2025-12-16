@@ -36,6 +36,15 @@ def _one_line(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+def _clean_url(url: str) -> str:
+    cleaned = url.strip()
+    cleaned = cleaned.lstrip("<")
+    # Common trailing punctuation from Markdown/parentheses.
+    while cleaned and cleaned[-1] in {".", ",", ")", "]", "}", ">", ";", ":"}:
+        cleaned = cleaned[:-1]
+    return cleaned.strip()
+
+
 def _excerpt(text: str, *, max_chars: int) -> str:
     text = _one_line(text)
     if len(text) <= max_chars:
@@ -90,6 +99,7 @@ class _TopicPacket:
     thread_id: int | None
     label: str
     count: int
+    links: list[str]
     messages: list[dict[str, str]]
     fallback_blurb: str
     link: str | None
@@ -263,9 +273,15 @@ def build_latest_brief(
     *,
     db: Database,
     config: Config,
+    header: str = "Latest",
     window_label: str,
     window_start_utc: str,
     window_end_utc: str,
+    limit_topics: int = 8,
+    include_big_picture: bool = True,
+    include_summary: bool = True,
+    include_topic_links: bool = True,
+    expand_hint: str | None = None,
 ) -> str:
     message_count, topic_count = db.get_window_stats(
         chat_id=config.source_chat_id, window_start_utc=window_start_utc, window_end_utc=window_end_utc
@@ -275,7 +291,7 @@ def build_latest_brief(
         chat_id=config.source_chat_id,
         window_start_utc=window_start_utc,
         window_end_utc=window_end_utc,
-        limit=8,
+        limit=limit_topics,
     )
     thread_ids = [int(row["thread_id"]) for row in activity if row["thread_id"] is not None]
     titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
@@ -292,8 +308,8 @@ def build_latest_brief(
     packets: list[_TopicPacket] = []
     for idx, row in enumerate(activity, start=1):
         thread_id = int(row["thread_id"]) if row["thread_id"] is not None else None
-        title = titles.get(int(thread_id)) if thread_id is not None else None
-        label = _format_topic_label(title=title, thread_id=thread_id)
+        topic_title = titles.get(int(thread_id)) if thread_id is not None else None
+        label = _format_topic_label(title=topic_title, thread_id=thread_id)
         count = int(row["message_count"])
 
         msgs = db.get_messages_for_topic(
@@ -303,6 +319,21 @@ def build_latest_brief(
             window_end_utc=window_end_utc,
             limit=80,
         )
+
+        links: list[str] = []
+        seen_links: set[str] = set()
+        for msg in msgs:
+            text = msg["text"] or ""
+            for url in _URL_RE.findall(text):
+                cleaned = _clean_url(url)
+                if not cleaned or cleaned in seen_links:
+                    continue
+                seen_links.add(cleaned)
+                links.append(cleaned)
+                if len(links) >= 8:
+                    break
+            if len(links) >= 8:
+                break
 
         link = None
         if msgs:
@@ -345,6 +376,7 @@ def build_latest_brief(
                 thread_id=thread_id,
                 label=label,
                 count=count,
+                links=links,
                 messages=llm_messages,
                 fallback_blurb=fallback,
                 link=link,
@@ -352,7 +384,7 @@ def build_latest_brief(
         )
 
     lines: list[str] = []
-    lines.append(f"Latest ({window_label})")
+    lines.append(f"{header} ({window_label})")
     lines.append(f"Window (UTC): {window_start_utc} → {window_end_utc}")
     lines.append(f"Messages: {message_count} across {topic_count} topics")
 
@@ -374,6 +406,19 @@ def build_latest_brief(
     topic_blurbs: dict[int, str] = {}
 
     if llm is not None and packets:
+        if include_topic_links:
+            link_rules = (
+                "Link handling:\n"
+                "- If you mention a PR/doc/link, include the full URL exactly as provided under Links.\n"
+                "- Never replace a URL with a bare filename (e.g., 'kip-0017.md').\n\n"
+            )
+        else:
+            link_rules = (
+                "Link handling:\n"
+                "- Do not paste raw URLs. If links exist, say '(see Links button)'.\n"
+                "- Do not present a bare filename (e.g., 'kip-0017.md') as if it were a URL.\n\n"
+            )
+
         system = (
             "You are writing a very short catch-up for an engineering Telegram chat.\n"
             "Use only the provided topic packets (messages).\n"
@@ -384,13 +429,16 @@ def build_latest_brief(
             "- OVERALL: 2–4 bullets max\n"
             "- TOPICS: one short clause per topic (<= 18 words)\n"
             "- Do not repeat the topic name in the clause.\n\n"
-            "Return sections using these exact headings:\n"
-            "### PLAIN_ENGLISH\n"
-            "- ...\n\n"
-            "### OVERALL\n"
-            "- ...\n\n"
-            "### TOPICS\n"
-            "T1: ...\n"
+            + link_rules
+            + (
+                "Return sections using these exact headings:\n"
+                "### PLAIN_ENGLISH\n"
+                "- ...\n\n"
+                "### OVERALL\n"
+                "- ...\n\n"
+                "### TOPICS\n"
+                "T1: ...\n"
+            )
         )
         user = (
             f"Window (UTC): {window_start_utc} → {window_end_utc}\n\n"
@@ -398,6 +446,7 @@ def build_latest_brief(
                 [
                     "TOPIC PACKET\n"
                     + f"T{p.idx}: {p.label} (thread_id={p.thread_id if p.thread_id is not None else 'none'}, {p.count} msgs)\n"
+                    + ("Links:\n" + "\n".join([f"- {u}" for u in p.links]) + "\n" if p.links else "")
                     + "Messages:\n"
                     + "\n".join([f"- [{m['date_utc']}] {m['author']}: {m['text']}" for m in p.messages])
                     for p in packets
@@ -442,7 +491,7 @@ def build_latest_brief(
                 if match:
                     topic_blurbs[int(match.group(1))] = match.group(2).strip()
 
-    if plain_lines:
+    if include_big_picture and plain_lines:
         lines.append("")
         lines.append("Big picture")
         for raw in plain_lines:
@@ -452,14 +501,14 @@ def build_latest_brief(
             if not cleaned.startswith("-"):
                 cleaned = "- " + cleaned
             lines.append(cleaned)
-    else:
+    elif include_big_picture:
         fallback = _fallback_big_picture(packets)
         if fallback:
             lines.append("")
             lines.append("Big picture")
             lines.extend(fallback)
 
-    if overall_lines:
+    if include_summary and overall_lines:
         lines.append("")
         lines.append("Summary")
         for raw in overall_lines:
@@ -476,15 +525,18 @@ def build_latest_brief(
         thread_label = str(p.thread_id) if p.thread_id is not None else "none"
         blurb = topic_blurbs.get(int(p.idx)) or p.fallback_blurb
         lines.append(f"- {p.label} ({p.count} msgs, id={thread_label}) — {blurb}")
-        if p.link:
+        if include_topic_links and p.link:
             lines.append(f"  {p.link}")
 
     shown_topics = len(packets)
     if topic_count > shown_topics:
         lines.append(f"- (+{topic_count - shown_topics} more topics)")
 
-    lines.append("")
-    lines.append("Expand: /topic <id> [6h|2d]  |  /rollup <id> rebuild")
+    if expand_hint is None:
+        expand_hint = "Expand: /teach <id> [2d]  |  /topic <id> [6h|2d]  |  /rollup <id> rebuild"
+    if expand_hint:
+        lines.append("")
+        lines.append(expand_hint)
     if llm is None and llm_err:
         lines.append(f"LLM unavailable: {llm_err}")
 

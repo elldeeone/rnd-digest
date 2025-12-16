@@ -31,6 +31,7 @@ class TextResponse:
 class DigestRequest:
     duration: timedelta | None
     advance_state: bool
+    mode: str
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,11 @@ class LatestRequest:
     mode: str
     advance_state: bool
     reset: bool
+
+
+@dataclass(frozen=True)
+class TeachRequest:
+    args: str
 
 
 def _parse_command(text: str) -> tuple[str, str] | None:
@@ -148,7 +154,7 @@ def _parse_latest_args(args: str) -> LatestRequest | TextResponse:
     return LatestRequest(duration=duration, mode=mode, advance_state=advance_state, reset=reset)
 
 
-CommandResult = TextResponse | DigestRequest | LatestRequest | AskRequest | RollupRequest | None
+CommandResult = TextResponse | DigestRequest | LatestRequest | AskRequest | RollupRequest | TeachRequest | None
 
 
 def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandResult:
@@ -174,6 +180,10 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
         if not args.strip():
             return TextResponse("Usage: /ask [6h|2d|all] <question>")
         return AskRequest(args=args)
+    if command in {"teach", "explain"}:
+        if not args.strip():
+            return TextResponse("Usage: /teach <thread_id> [6h|2d|1w]")
+        return TeachRequest(args=args)
     if command == "rollup":
         if not args.strip():
             return TextResponse("Usage: /rollup <thread_id> [6h|2d|all|rebuild]")
@@ -183,22 +193,44 @@ def handle_command(*, ctx: CommandContext, message: dict[str, Any]) -> CommandRe
     if command == "debug_ids":
         return TextResponse(handle_debug_ids(message=message))
     if command == "digest":
-        args_parts = args.split()
-        if not args_parts:
-            return DigestRequest(duration=None, advance_state=True)
+        args_parts = [p.strip() for p in args.split() if p.strip()]
+        duration: timedelta | None = None
+        mode = "overview"
+        advance_state: bool | None = None
 
-        token = args_parts[0].strip().lower()
-        if token in {"since_last", "since-last", "since"}:
-            return DigestRequest(duration=None, advance_state=True)
+        for raw in args_parts:
+            token = raw.strip().lower()
+            if token in {"since_last", "since-last", "since"}:
+                duration = None
+                continue
+            if token in {"full", "text", "verbose", "details"}:
+                mode = "full"
+                continue
+            if token in {"overview", "brief", "ui", "interactive"}:
+                mode = "overview"
+                continue
+            if token in {"advance", "commit"}:
+                advance_state = True
+                continue
+            if token in {"peek", "preview", "dry", "noadvance", "no-advance"}:
+                advance_state = False
+                continue
 
-        try:
-            duration = parse_duration(token)
-        except ValueError:
-            return TextResponse("Usage: /digest [6h|2d]\n\nTip: /digest (no args) posts since last digest.")
+            if duration is None:
+                try:
+                    duration = parse_duration(token)
+                except ValueError:
+                    return TextResponse(
+                        "Usage: /digest [6h|2d] [overview|full] [advance]\n\n"
+                        "Tip: /digest (no args) posts since last digest."
+                    )
+            else:
+                return TextResponse("Usage: /digest [6h|2d] [overview|full] [advance]")
 
-        # Ad-hoc digest: do not move the scheduled digest boundary.
-        advance_state = any(part.lower() in {"advance", "commit"} for part in args_parts[1:])
-        return DigestRequest(duration=duration, advance_state=advance_state)
+        if advance_state is None:
+            advance_state = False if duration is not None else True
+
+        return DigestRequest(duration=duration, advance_state=advance_state, mode=mode)
     if command in {"set_topic_title", "set_topic"}:
         return TextResponse(handle_set_topic_title(db=ctx.db, config=ctx.config, args=args))
     if command == "backfill_topics":

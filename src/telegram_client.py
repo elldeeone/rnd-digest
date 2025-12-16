@@ -12,6 +12,8 @@ from src.util.telegram_format import SendResult, chunk_text
 
 log = logging.getLogger(__name__)
 
+ReplyMarkup = dict[str, Any]
+
 
 @dataclass(frozen=True)
 class TelegramClient:
@@ -61,9 +63,11 @@ class TelegramClient:
         message_thread_id: int | None = None,
         parse_mode: str | None = None,
         disable_web_page_preview: bool = True,
+        reply_markup: ReplyMarkup | None = None,
     ) -> SendResult:
         message_ids: list[int] = []
-        for chunk in chunk_text(text):
+        chunks = chunk_text(text)
+        for idx, chunk in enumerate(chunks):
             params: dict[str, Any] = {
                 "chat_id": chat_id,
                 "text": chunk,
@@ -73,6 +77,8 @@ class TelegramClient:
                 params["message_thread_id"] = message_thread_id
             if parse_mode is not None:
                 params["parse_mode"] = parse_mode
+            if reply_markup is not None and idx == 0:
+                params["reply_markup"] = json.dumps(reply_markup)
 
             resp = requests.post(f"{self.base_url}/sendMessage", data=params, timeout=30)
             try:
@@ -96,6 +102,7 @@ class TelegramClient:
         chat_id: int,
         text: str,
         message_thread_id: int | None = None,
+        reply_markup: ReplyMarkup | None = None,
     ) -> SendResult:
         # Intentionally send as plain text (no parse_mode) to avoid Telegram MarkdownV2
         # escaping issues for command output.
@@ -104,6 +111,7 @@ class TelegramClient:
             text=text,
             message_thread_id=message_thread_id,
             parse_mode=None,
+            reply_markup=reply_markup,
         )
 
     def edit_message_text(
@@ -114,6 +122,7 @@ class TelegramClient:
         text: str,
         parse_mode: str | None = None,
         disable_web_page_preview: bool = True,
+        reply_markup: ReplyMarkup | None = None,
     ) -> None:
         params: dict[str, Any] = {
             "chat_id": chat_id,
@@ -123,6 +132,8 @@ class TelegramClient:
         }
         if parse_mode is not None:
             params["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            params["reply_markup"] = json.dumps(reply_markup)
 
         resp = requests.post(f"{self.base_url}/editMessageText", data=params, timeout=30)
         try:
@@ -135,4 +146,62 @@ class TelegramClient:
             description = payload.get("description")
             raise RuntimeError(
                 f"editMessageText failed: HTTP {resp.status_code}, {description or payload!r}"
+            )
+
+    def edit_message_reply_markup(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        reply_markup: ReplyMarkup | None,
+    ) -> None:
+        params: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+        }
+        if reply_markup is not None:
+            params["reply_markup"] = json.dumps(reply_markup)
+
+        resp = requests.post(f"{self.base_url}/editMessageReplyMarkup", data=params, timeout=30)
+        try:
+            payload = resp.json()
+        except ValueError:
+            resp.raise_for_status()
+            raise RuntimeError(
+                f"editMessageReplyMarkup failed: HTTP {resp.status_code} (non-JSON response)"
+            )
+
+        if not resp.ok or not payload.get("ok"):
+            description = payload.get("description")
+            raise RuntimeError(
+                f"editMessageReplyMarkup failed: HTTP {resp.status_code}, {description or payload!r}"
+            )
+
+    def answer_callback_query(
+        self,
+        *,
+        callback_query_id: str,
+        text: str | None = None,
+        show_alert: bool = False,
+    ) -> None:
+        params: dict[str, Any] = {
+            "callback_query_id": callback_query_id,
+            "show_alert": bool(show_alert),
+        }
+        if text is not None:
+            params["text"] = text
+
+        resp = requests.post(f"{self.base_url}/answerCallbackQuery", data=params, timeout=30)
+        try:
+            payload = resp.json()
+        except ValueError:
+            resp.raise_for_status()
+            raise RuntimeError(
+                f"answerCallbackQuery failed: HTTP {resp.status_code} (non-JSON response)"
+            )
+
+        if not resp.ok or not payload.get("ok"):
+            description = payload.get("description")
+            raise RuntimeError(
+                f"answerCallbackQuery failed: HTTP {resp.status_code}, {description or payload!r}"
             )

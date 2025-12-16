@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import replace
+from datetime import datetime, timezone
 from datetime import timedelta
 
 import requests
@@ -11,18 +12,33 @@ from dotenv import load_dotenv
 from src.config import Config
 from src.db import Database
 from src.commands.ask import handle_ask
+from src.commands.receipts import build_topic_links, build_topic_receipts
 from src.commands.latest import build_latest_brief, build_latest_full
 from src.commands.rollup import handle_rollup
+from src.commands.teach import (
+    TeachWindow,
+    build_teach_topic_details,
+    build_teach_topic_overview,
+    handle_teach,
+)
 from src.commands.router import (
     AskRequest,
     CommandContext,
     DigestRequest,
     LatestRequest,
     RollupRequest,
+    TeachRequest,
     TextResponse,
     handle_command,
 )
 from src.digest.build_digest import build_digest
+from src.digest.interactive import (
+    build_digest_overview_text,
+    build_digest_main_keyboard,
+    build_digest_topic_view_keyboard,
+    build_digest_topics_keyboard,
+    parse_digest_callback,
+)
 from src.ingest.listener import ingest_update
 from src.rollups.refresh import maybe_refresh_rollups_before_digest
 from src.telegram_client import TelegramClient
@@ -83,7 +99,7 @@ def main() -> None:
                 updates = client.get_updates(
                     offset=offset,
                     timeout_seconds=config.poll_timeout_seconds,
-                    allowed_updates=["message", "edited_message"],
+                    allowed_updates=["message", "edited_message", "callback_query"],
                 )
                 db.set_state("last_poll_ok_at_utc", poll_now_iso)
                 if prior_backoff > 1.0:
@@ -115,6 +131,19 @@ def main() -> None:
 
                 offset = int(update["update_id"]) + 1
                 db.set_state("telegram_update_offset", str(offset))
+
+                callback_query = update.get("callback_query")
+                if isinstance(callback_query, dict):
+                    try:
+                        _handle_callback_query(
+                            db=db,
+                            client=client,
+                            config=config,
+                            callback_query=callback_query,
+                        )
+                    except Exception:
+                        log.exception("Failed handling callback_query")
+                    continue
 
                 message = update.get("message") or update.get("edited_message")
                 if not isinstance(message, dict):
@@ -166,6 +195,17 @@ def main() -> None:
                             else None,
                             request=result,
                         )
+                    elif isinstance(result, TeachRequest):
+                        _run_teach(
+                            db=db,
+                            client=client,
+                            config=config,
+                            target_chat_id=int(chat_id),
+                            target_thread_id=message.get("message_thread_id")
+                            if isinstance(message.get("message_thread_id"), int)
+                            else None,
+                            request=result,
+                        )
                     elif isinstance(result, DigestRequest):
                         _run_digest(
                             db=db,
@@ -180,6 +220,7 @@ def main() -> None:
                             ),
                             duration=result.duration,
                             advance_state=result.advance_state,
+                            mode=result.mode,
                             show_processing_notice=True,
                         )
                 except Exception:
@@ -197,6 +238,7 @@ def main() -> None:
                         target_thread_id=config.control_digest_thread_id,
                         duration=None,
                         advance_state=True,
+                        mode="overview",
                         show_processing_notice=False,
                     )
                 except Exception:
@@ -261,6 +303,146 @@ def _send_processing_notice(
     return res.message_ids[0] if res.message_ids else None
 
 
+def _handle_callback_query(
+    *,
+    db: Database,
+    client: TelegramClient,
+    config: Config,
+    callback_query: dict[str, object],
+) -> None:
+    callback_id = callback_query.get("id") if isinstance(callback_query.get("id"), str) else None
+    data = callback_query.get("data") if isinstance(callback_query.get("data"), str) else None
+    message = callback_query.get("message") if isinstance(callback_query.get("message"), dict) else None
+    if callback_id is None or data is None or message is None:
+        return
+
+    chat_id = message.get("chat", {}).get("id") if isinstance(message.get("chat"), dict) else None
+    message_id = message.get("message_id")
+    if not isinstance(chat_id, int) or chat_id not in config.control_chat_ids:
+        return
+    if not isinstance(message_id, int):
+        return
+
+    cb = parse_digest_callback(data)
+    if cb is None:
+        try:
+            client.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            log.exception("answerCallbackQuery failed")
+        return
+
+    thread_id = message.get("message_thread_id") if isinstance(message.get("message_thread_id"), int) else None
+
+    if cb.kind == "menu":
+        try:
+            text = db.get_digest_by_telegram_message_id(
+                chat_id=int(chat_id),
+                telegram_message_id=int(message_id),
+            )
+            if text is None:
+                text = build_digest_overview_text(db=db, config=config, start_ts=cb.start_ts, end_ts=cb.end_ts)
+
+            if cb.action == "main":
+                markup = build_digest_main_keyboard(start_ts=cb.start_ts, end_ts=cb.end_ts)
+            else:
+                markup = build_digest_topics_keyboard(
+                    db=db, config=config, start_ts=cb.start_ts, end_ts=cb.end_ts, action=cb.action
+                )
+
+            client.edit_message_text(
+                chat_id=int(chat_id),
+                message_id=int(message_id),
+                text=text,
+                reply_markup=markup,
+            )
+            client.answer_callback_query(callback_query_id=callback_id)
+        except Exception:
+            log.exception("Failed handling digest menu callback")
+            try:
+                client.answer_callback_query(callback_query_id=callback_id, text="Failed to update menu.")
+            except Exception:
+                log.exception("answerCallbackQuery failed")
+        return
+
+    # "do" actions: show details in-place with a Back button.
+    window_start_utc = datetime.fromtimestamp(int(cb.start_ts), tz=timezone.utc).replace(microsecond=0).isoformat()
+    window_end_utc = datetime.fromtimestamp(int(cb.end_ts), tz=timezone.utc).replace(microsecond=0).isoformat()
+
+    try:
+        if cb.action in {"teach", "teach_detail"}:
+            client.answer_callback_query(callback_query_id=callback_id, text="Explaining…")
+        else:
+            client.answer_callback_query(callback_query_id=callback_id)
+    except Exception:
+        log.exception("answerCallbackQuery failed")
+
+    view: str | None = None
+    try:
+        if cb.action == "teach":
+            view = "teach"
+            text = build_teach_topic_overview(
+                db=db,
+                config=config,
+                thread_id=cb.thread_id,
+                window=TeachWindow(window_start_utc=window_start_utc, window_end_utc=window_end_utc),
+            )
+        elif cb.action == "teach_detail":
+            view = "teach_detail"
+            text = build_teach_topic_details(
+                db=db,
+                config=config,
+                thread_id=cb.thread_id,
+                window=TeachWindow(window_start_utc=window_start_utc, window_end_utc=window_end_utc),
+            )
+        elif cb.action == "receipts":
+            view = "receipts"
+            text = build_topic_receipts(
+                db=db,
+                config=config,
+                thread_id=cb.thread_id,
+                window_start_utc=window_start_utc,
+                window_end_utc=window_end_utc,
+            )
+        elif cb.action == "links":
+            view = "links"
+            text = build_topic_links(
+                db=db,
+                config=config,
+                thread_id=cb.thread_id,
+                window_start_utc=window_start_utc,
+                window_end_utc=window_end_utc,
+            )
+        else:
+            try:
+                client.answer_callback_query(callback_query_id=callback_id, text="Unknown action.")
+            except Exception:
+                log.exception("answerCallbackQuery failed")
+            return
+    except Exception:
+        log.exception("Failed building digest action view")
+        return
+
+    try:
+        markup = build_digest_topic_view_keyboard(
+            start_ts=cb.start_ts,
+            end_ts=cb.end_ts,
+            thread_id=cb.thread_id,
+            view=view or "teach",
+        )
+        client.edit_message_text(
+            chat_id=int(chat_id),
+            message_id=int(message_id),
+            text=text,
+            reply_markup=markup,
+        )
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "message is not modified" in msg:
+            return
+        log.exception("Failed editing digest message; sending response separately")
+        client.send_message_fallback_plain(chat_id=int(chat_id), message_thread_id=thread_id, text=text)
+
+
 def _send_with_optional_edit(
     *,
     client: TelegramClient,
@@ -268,12 +450,14 @@ def _send_with_optional_edit(
     message_thread_id: int | None,
     text: str,
     ack_message_id: int | None,
+    reply_markup: dict[str, object] | None = None,
 ) -> list[int]:
     if ack_message_id is None:
         return client.send_message_fallback_plain(
             chat_id=chat_id,
             message_thread_id=message_thread_id,
             text=text,
+            reply_markup=reply_markup,
         ).message_ids
 
     chunks = chunk_text(text)
@@ -286,6 +470,7 @@ def _send_with_optional_edit(
             chat_id=chat_id,
             message_id=ack_message_id,
             text=chunks[0],
+            reply_markup=reply_markup,
         )
         message_ids.append(ack_message_id)
     except Exception:
@@ -294,6 +479,7 @@ def _send_with_optional_edit(
             chat_id=chat_id,
             message_thread_id=message_thread_id,
             text=text,
+            reply_markup=reply_markup,
         ).message_ids
 
     for chunk in chunks[1:]:
@@ -448,6 +634,34 @@ def _run_rollup(
     )
 
 
+def _run_teach(
+    *,
+    db: Database,
+    client: TelegramClient,
+    config: Config,
+    target_chat_id: int,
+    target_thread_id: int | None,
+    request: TeachRequest,
+) -> None:
+    ack_id = None
+    if _llm_probably_enabled(config):
+        ack_id = _send_processing_notice(
+            client=client,
+            chat_id=target_chat_id,
+            message_thread_id=target_thread_id,
+            text="Message received — explaining now.",
+        )
+
+    text = handle_teach(db=db, config=config, args=request.args)
+    _send_with_optional_edit(
+        client=client,
+        chat_id=target_chat_id,
+        message_thread_id=target_thread_id,
+        text=text,
+        ack_message_id=ack_id,
+    )
+
+
 def _run_digest(
     *,
     db: Database,
@@ -457,6 +671,7 @@ def _run_digest(
     target_thread_id: int | None,
     duration: timedelta | None,
     advance_state: bool,
+    mode: str,
     show_processing_notice: bool,
 ) -> None:
     now = now_utc()
@@ -488,12 +703,20 @@ def _run_digest(
         except Exception:
             log.exception("Rollup auto-refresh failed; continuing without rollups")
 
-    digest = build_digest(
-        db=db,
-        config=config,
-        window_start_utc=window_start,
-        window_end_utc=window_end,
-    )
+    reply_markup = None
+    if mode == "full":
+        digest = build_digest(
+            db=db,
+            config=config,
+            window_start_utc=window_start,
+            window_end_utc=window_end,
+        )
+    else:
+        # Short, plain-English overview with buttons to expand.
+        start_ts = int(datetime.fromisoformat(window_start).timestamp())
+        end_ts = int(datetime.fromisoformat(window_end).timestamp())
+        digest = build_digest_overview_text(db=db, config=config, start_ts=start_ts, end_ts=end_ts)
+        reply_markup = build_digest_main_keyboard(start_ts=start_ts, end_ts=end_ts)
 
     message_ids = _send_with_optional_edit(
         client=client,
@@ -501,6 +724,7 @@ def _run_digest(
         message_thread_id=target_thread_id,
         text=digest,
         ack_message_id=ack_id,
+        reply_markup=reply_markup,
     )
     created_at = to_iso_utc(now)
     db.insert_digest(

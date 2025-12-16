@@ -49,7 +49,13 @@ Optional: keep rollups fresh before scheduled digests:
 
 ## Docker
 
-`docker compose -f docker/docker-compose.yml up -d --build`
+Run:
+
+- `docker compose -f docker/docker-compose.yml up -d --build`
+- Check status: `docker compose -f docker/docker-compose.yml ps`
+- Tail logs: `docker compose -f docker/docker-compose.yml logs -f --tail=200`
+
+On a VM/host, the usual update flow is `git pull` then rerun the `docker compose ... up -d --build` command.
 
 ## Tests
 

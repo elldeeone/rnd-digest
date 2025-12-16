@@ -8,4 +8,11 @@ services:
     volumes:
       - ../data:/app/data
       - ../logs:/app/logs
+    healthcheck:
+      test: >
+        python -c "import os,sqlite3,sys;from datetime import datetime,timezone;p=os.environ.get('DB_PATH','./data/kaspa.db');c=sqlite3.connect(p);r=c.execute(\"select value from state where key='last_poll_ok_at_utc'\").fetchone();c.close();t=datetime.fromisoformat(r[0]) if r else None;a=(datetime.now(timezone.utc)-t).total_seconds() if t else 1e9;sys.exit(0 if a<180 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped

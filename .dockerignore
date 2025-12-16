@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Git / OS
+.git/
+.DS_Store
+
+# Local runtime data (mounted in Docker Compose)
+.env
+data/
+logs/
+
+# SQLite artifacts
+*.db
+*.db-wal
+*.db-shm
+

@@ -105,3 +105,34 @@ class TelegramClient:
             message_thread_id=message_thread_id,
             parse_mode=None,
         )
+
+    def edit_message_text(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: str | None = None,
+        disable_web_page_preview: bool = True,
+    ) -> None:
+        params: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "disable_web_page_preview": disable_web_page_preview,
+        }
+        if parse_mode is not None:
+            params["parse_mode"] = parse_mode
+
+        resp = requests.post(f"{self.base_url}/editMessageText", data=params, timeout=30)
+        try:
+            payload = resp.json()
+        except ValueError:
+            resp.raise_for_status()
+            raise RuntimeError(f"editMessageText failed: HTTP {resp.status_code} (non-JSON response)")
+
+        if not resp.ok or not payload.get("ok"):
+            description = payload.get("description")
+            raise RuntimeError(
+                f"editMessageText failed: HTTP {resp.status_code}, {description or payload!r}"
+            )

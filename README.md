@@ -22,7 +22,8 @@ Place exported JSON under `./data/exports/`, then run:
 
 ## LLM (OpenRouter)
 
-The bot can optionally use an LLM for `/digest` summaries and `/ask` Q&A.
+The bot can optionally use an LLM for `/latest` (brief), `/digest` summaries, and `/ask` Q&A.
+For these commands, it immediately posts a short “Message received…” placeholder and edits it into the final response.
 
 Set in `.env`:
 
@@ -38,7 +39,7 @@ Optional: keep rollups fresh before scheduled digests:
 
 - `/help`
 - `/health`
-- `/latest [6h|2d]`
+- `/latest [6h|2d] [brief|full] [peek]` (no args = since last check-in; shortcut: send `latest`)
 - `/search <terms>`
 - `/ask [6h|2d|all] <question>`
 - `/topic <thread_id> [6h|2d|1w]`

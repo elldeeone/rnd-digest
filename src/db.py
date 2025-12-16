@@ -488,6 +488,35 @@ class Database:
         rows.reverse()
         return rows
 
+    def get_window_stats(
+        self,
+        *,
+        chat_id: int,
+        window_start_utc: str,
+        window_end_utc: str,
+    ) -> tuple[int, int]:
+        row = self.conn.execute(
+            """
+            SELECT
+                COUNT(*) AS message_count,
+                COUNT(DISTINCT COALESCE(thread_id, -1)) AS topic_count
+            FROM messages
+            WHERE
+                chat_id = :chat_id
+                AND is_service = 0
+                AND date_utc >= :window_start_utc
+                AND date_utc <= :window_end_utc;
+            """,
+            {
+                "chat_id": chat_id,
+                "window_start_utc": window_start_utc,
+                "window_end_utc": window_end_utc,
+            },
+        ).fetchone()
+        if not row:
+            return 0, 0
+        return int(row["message_count"]), int(row["topic_count"])
+
     def get_topic_activity(
         self,
         *,

@@ -751,11 +751,12 @@ class Database:
             ).fetchone()
             
             if row:
-                text = row["text"].strip()
-                # Truncate nicely
-                title = f"Thread: {text[:40].strip()}..."
-                if len(text) <= 40:
-                    title = f"Thread: {text}"
+                text = row["text"].strip().replace("\n", " ")
+                # Clean, short excerpt - just first ~30 chars
+                if len(text) > 30:
+                    title = text[:30].strip() + "…"
+                else:
+                    title = text
                     
                 self.upsert_topic(
                     chat_id=chat_id,

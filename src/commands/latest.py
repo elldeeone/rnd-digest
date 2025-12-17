@@ -13,9 +13,12 @@ from src.util.telegram_links import build_message_link
 
 def _format_topic_label(*, title: str | None, thread_id: int | None) -> str:
     if title:
+        # Clean up fallback titles that start with "Thread:"
+        if title.startswith("Thread: "):
+            return title[8:]  # Remove "Thread: " prefix
         return title
     if thread_id is None:
-        return "No topic"
+        return "General"
     return f"Thread {thread_id}"
 
 
@@ -227,6 +230,14 @@ def build_latest_full(
             now_utc_iso=window_end_utc,
         )
         titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+        missing = [tid for tid in thread_ids if tid not in titles]
+        if missing:
+            db.backfill_topic_titles_from_message_text(
+                chat_id=config.source_chat_id,
+                thread_ids=missing,
+                now_utc_iso=window_end_utc,
+            )
+            titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     lines: list[str] = []
     lines.append(f"Latest ({window_label})")
@@ -304,6 +315,14 @@ def build_latest_brief(
             now_utc_iso=window_end_utc,
         )
         titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
+        missing = [tid for tid in thread_ids if tid not in titles]
+        if missing:
+            db.backfill_topic_titles_from_message_text(
+                chat_id=config.source_chat_id,
+                thread_ids=missing,
+                now_utc_iso=window_end_utc,
+            )
+            titles = db.get_topic_titles(chat_id=config.source_chat_id, thread_ids=thread_ids)
 
     packets: list[_TopicPacket] = []
     for idx, row in enumerate(activity, start=1):
@@ -522,9 +541,8 @@ def build_latest_brief(
     lines.append("")
     lines.append("Top threads")
     for p in packets:
-        thread_label = str(p.thread_id) if p.thread_id is not None else "none"
         blurb = topic_blurbs.get(int(p.idx)) or p.fallback_blurb
-        lines.append(f"- {p.label} ({p.count} msgs, id={thread_label}) — {blurb}")
+        lines.append(f"- {p.label} ({p.count} msgs) — {blurb}")
         if include_topic_links and p.link:
             lines.append(f"  {p.link}")
 
